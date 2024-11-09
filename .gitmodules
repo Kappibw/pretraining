@@ -1,0 +1,3 @@
+[submodule "efficient_former"]
+	path = efficient_former
+	url = git@github.com:Kappibw/EfficientFormer.git
