@@ -1,3 +1,4 @@
+import datetime
 import os
 import pickle
 import torch
@@ -15,44 +16,71 @@ SPHERE_IMAGE_SIDES = 6
 SPHERE_IMAGE_WIDTH = SPHERE_IMAGE_HEIGHT * 4
 IMAGE_START_IDX = 33
 INPUT_IMAGE_SIZE = SPHERE_IMAGE_HEIGHT * 2
+VIT_EMBEDDING_SIZE = 3584
 
-# Initialize wandb
-wandb.init(project="pretraining_test")  # Replace with your wandb project name
+NUM_EPOCHS = 10
+BATCH_SIZE = 8
+
+def save(vit_model, actor_critic, save_dir, idx):
+    vit_model_path = os.path.join(save_dir, f"vit_model_{idx}.pt")
+    actor_critic_path = os.path.join(save_dir, f"actor_critic_{idx}.pt")
+
+    # Save the models' state dictionaries
+    torch.save(vit_model.state_dict(), vit_model_path)
+    torch.save(actor_critic.state_dict(), actor_critic_path)
+
+    print(f"Model idx {idx} saved to {save_dir}")
 
 class PKLDataset(Dataset):
     def __init__(self, data_dir, transform=None):
         self.data_files = [os.path.join(data_dir, file) for file in os.listdir(data_dir) if file.endswith(".pkl")]
         self.transform = transform
         self.samples = []
+        self.batch_load_size = 5000
 
         # Load all data from each pickle file once and store it in `self.samples`
         for file in self.data_files:
             with open(file, "rb") as f:
                 data = pickle.load(f)
-                image_data = data["observations"][:, IMAGE_START_IDX:]
-                reshaped_image_data = image_data.view(
-                    image_data.shape[0], SPHERE_IMAGE_SIDES, SPHERE_IMAGE_HEIGHT, SPHERE_IMAGE_HEIGHT, 2
-                )
-                reshaped_image_data = reshaped_image_data[:, :4, :, :, :]
+                # Process in batches of `batch_load_size`
+                total_samples = data["observations"].shape[0]
+                
+                for start_idx in range(0, total_samples, self.batch_load_size):
+                    end_idx = min(start_idx + self.batch_load_size, total_samples)
+                    
+                    # Slice batch
+                    batch_image_data = data["observations"][start_idx:end_idx, IMAGE_START_IDX:]
+                    reshaped_image_data = batch_image_data.view(
+                        batch_image_data.shape[0], SPHERE_IMAGE_SIDES, SPHERE_IMAGE_HEIGHT, SPHERE_IMAGE_HEIGHT, 2
+                    )
+                    
+                    # Reshape and process each batch
+                    reshaped_image_data = reshaped_image_data[:, :4, :, :, :]
+                    reshaped_image_data = reshaped_image_data[:, [0, 3, 1, 2], :, :]
+                    
+                    depth_channel = reshaped_image_data[..., 0:1].view(
+                        batch_image_data.shape[0], SPHERE_IMAGE_WIDTH, SPHERE_IMAGE_HEIGHT, 1
+                    )
+                    semantics_channel = reshaped_image_data[..., 1:2].view(
+                        batch_image_data.shape[0], SPHERE_IMAGE_WIDTH, SPHERE_IMAGE_HEIGHT, 1
+                    )
+                    
+                    # TODO: Use semantics once they aren't junk.
+                    batch_image_data = torch.cat((depth_channel, depth_channel, depth_channel), dim=-1)
+                    batch_image_data = batch_image_data.view(
+                        batch_image_data.shape[0], 2, int(SPHERE_IMAGE_WIDTH / 2), SPHERE_IMAGE_HEIGHT, 3
+                    )
+                    batch_image_data = batch_image_data.permute(0, 4, 2, 1, 3).reshape(
+                        batch_image_data.shape[0], 3, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE
+                    )
+                    
+                    # Rotate 90 degrees clockwise
+                    batch_image_data = torch.rot90(batch_image_data, k=-1, dims=(2, 3))
+                    batch_non_image_data = data["observations"][start_idx:end_idx, :IMAGE_START_IDX]
+                    batch_actions = data["actions"][start_idx:end_idx]
 
-                depth_channel = reshaped_image_data[..., 0:1].view(
-                    image_data.shape[0], SPHERE_IMAGE_WIDTH, SPHERE_IMAGE_HEIGHT, 1
-                )
-                semantics_channel = reshaped_image_data[..., 1:2].view(
-                    image_data.shape[0], SPHERE_IMAGE_WIDTH, SPHERE_IMAGE_HEIGHT, 1
-                )
-
-                image_data = torch.cat((depth_channel, depth_channel, semantics_channel), dim=-1)
-                image_data = image_data.view(
-                    image_data.shape[0], 2, int(SPHERE_IMAGE_WIDTH / 2), SPHERE_IMAGE_HEIGHT, 3
-                )
-                image_data = image_data.permute(0, 4, 2, 1, 3).reshape(
-                    image_data.shape[0], 3, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE
-                )
-                non_image_data = data["observations"][:, :IMAGE_START_IDX]
-                actions = data["actions"]
-
-                self.samples.extend(zip(image_data, non_image_data, actions))
+                    # Add the batch to the samples
+                    self.samples.extend(zip(batch_image_data, batch_non_image_data, batch_actions))
 
     def __len__(self):
         return len(self.samples)
@@ -60,26 +88,61 @@ class PKLDataset(Dataset):
     def __getitem__(self, idx):
         return self.samples[idx]
 
+def evaluate(vit_model, actor_critic, data_loader, loss_fn):
+    vit_model.eval()
+    actor_critic.eval()
+    
+    total_loss = 0.0
+    num_batches = 0
+
+    with torch.no_grad():
+        for image_data, non_image_data, actions in data_loader:
+            image_data, non_image_data, actions = image_data.to(device), non_image_data.to(device), actions.to(device)
+            goal = non_image_data[:, -3:]
+            embeddings = vit_model.forward_omnidir(image_data, goal)
+
+            embeddings = embeddings[-1] if vit_model.fork_feat else embeddings
+            combined_input = torch.cat((embeddings, non_image_data), dim=-1)
+            actions_pred = actor_critic.actor(combined_input)
+
+            loss = loss_fn(actions_pred, actions)
+            total_loss += loss.item()
+            num_batches += 1
+
+    avg_loss = total_loss / num_batches
+    return avg_loss
+
+# Initialize wandb
+wandb.init(project="pretraining_test")
+
+# Create a directory to save the models
+time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+save_dir = os.path.join(os.path.dirname(__file__), "checkpoints", time)
+os.makedirs(save_dir, exist_ok=True)
+
+# Set up the data loaders
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-data_dir = os.path.join(os.path.dirname(__file__), "data")
+training_data_dir = os.path.join(os.path.dirname(__file__), "data/training")
+eval_data_dir = os.path.join(os.path.dirname(__file__), "data/eval")
 
-transform = None
-dataset = PKLDataset(data_dir, transform=transform)
-data_loader = DataLoader(dataset, batch_size=8, shuffle=True)
+training_dataset = PKLDataset(training_data_dir)
+training_data_loader = DataLoader(training_dataset, batch_size=BATCH_SIZE, shuffle=True)
+eval_dataset = PKLDataset(eval_data_dir)
+eval_data_loader = DataLoader(eval_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
+# Instantiate the VIT model
 vit_model = efficientformerv2_s1(pretrained=False, resolution=128).to(device)
+
+# Instantiate the actor-critic model
 actor_policy_cfg = {
     "init_noise_std": 1.0,
     "actor_hidden_dims": [512, 256, 128],
     "critic_hidden_dims": [512, 256, 128],
     "activation": "elu",
 }
-
-EMBEDDING_SIZE = 3584
-for image_data, non_image_data, actions in data_loader:
+for image_data, non_image_data, actions in training_data_loader:
     break
-
-num_actor_obs = EMBEDDING_SIZE + non_image_data.shape[1]
+num_actor_obs = VIT_EMBEDDING_SIZE + non_image_data.shape[1]
 num_critic_obs = num_actor_obs
 num_actions = actions.shape[1]
 actor_critic = ActorCritic(num_actor_obs=num_actor_obs, num_critic_obs=num_critic_obs, num_actions=num_actions, **actor_policy_cfg).to(device)
@@ -90,18 +153,18 @@ loss_fn = nn.MSELoss()
 
 # Log the configuration to wandb
 wandb.config.update({
-    "num_epochs": 10,
-    "batch_size": 8,
+    "num_epochs": NUM_EPOCHS,
+    "batch_size": BATCH_SIZE,
     "learning_rate": 1e-4,
 })
 
 # Training loop
-num_epochs = 10
-for epoch in range(num_epochs):
-    for batch_idx, (image_data, non_image_data, actions) in enumerate(data_loader):
+for epoch in range(NUM_EPOCHS):
+    for batch_idx, (image_data, non_image_data, actions) in enumerate(training_data_loader):
         image_data, non_image_data, actions = image_data.to(device), non_image_data.to(device), actions.to(device)
         goal = non_image_data[:, -3:]
         embeddings = vit_model.forward_omnidir(image_data, goal)
+
         embeddings = embeddings[-1] if vit_model.fork_feat else embeddings
 
         combined_input = torch.cat((embeddings, non_image_data), dim=-1)
@@ -113,8 +176,18 @@ for epoch in range(num_epochs):
         optimizer.step()
 
         if batch_idx % 10 == 0:
-            print(f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx+1}/{len(data_loader)}], Loss: {loss.item()}")
-            wandb.log({"epoch": epoch+1, "batch": batch_idx+1, "loss": loss.item()})
+            print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Batch [{batch_idx+1}/{len(training_data_loader)}], Loss: {loss.item()}")
+            if batch_idx % 1000 == 0:
+                image = utils.log_attention_mask(image_data, vit_model, epoch, batch_idx)
+                wandb.log({"epoch": epoch+1, "batch": batch_idx+1, "loss": loss.item(), "attention_map": image})
+            else:
+                wandb.log({"epoch": epoch+1, "batch": batch_idx+1, "loss": loss.item()})
+    save(vit_model, actor_critic, save_dir, epoch)
+
+    # Run evaluation
+    val_loss = evaluate(vit_model, actor_critic, eval_data_loader, loss_fn)
+    print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Validation Loss: {val_loss}")
+    wandb.log({"epoch": epoch+1, "val_loss": val_loss})
 
 print("Training completed.")
 wandb.finish()

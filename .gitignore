@@ -1,1 +1,4 @@
 data/
+checkpoints/
+wandb/
+old_data/
