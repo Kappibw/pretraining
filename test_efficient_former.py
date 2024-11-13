@@ -7,7 +7,7 @@ from torch.optim import Adam
 from torchvision import transforms
 from rsl_rl.modules import ActorCritic
 from torch.utils.data import DataLoader, Dataset
-from efficient_former.models import efficientformerv2_s1
+from efficient_former.efficientformer_models import efficientformerv2_s1
 import utils
 import wandb
 

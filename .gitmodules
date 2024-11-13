@@ -1,3 +1,6 @@
 [submodule "efficient_former"]
 	path = efficient_former
 	url = git@github.com:Kappibw/EfficientFormer.git
+[submodule "got_nav"]
+	path = got_nav
+	url = git@github.com:Kappibw/DRL-Transformer-SimtoReal-Navigation.git

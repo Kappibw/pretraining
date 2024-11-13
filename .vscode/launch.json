@@ -12,11 +12,19 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Python Debugger: Test Model",
+            "name": "Python Debugger: Test EfficientFormer Model",
             "type": "debugpy",
             "request": "launch",
             "args" : ["--num_envs", "10"],
-            "program": "${workspaceFolder}/test_model.py",
+            "program": "${workspaceFolder}/test_efficient_former.py",
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "Python Debugger: Test GoT Model",
+            "type": "debugpy",
+            "request": "launch",
+            "args" : ["--num_envs", "10"],
+            "program": "${workspaceFolder}/test_got.py",
             "console": "integratedTerminal",
         }
     ]

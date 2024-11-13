@@ -4,7 +4,11 @@ import torch.nn.functional as F
 import wandb
 import numpy as np
 
-from efficient_former.models import AttnFFN, Attention4D
+from efficient_former.efficientformer_models import AttnFFN, Attention4D
+
+import torch
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
 
 def log_attention_mask(input_image, model, epoch, batch_idx):
@@ -50,64 +54,57 @@ def log_attention_mask(input_image, model, epoch, batch_idx):
         return wandb_img
     
 
-    def visualize_goal_attention(input_image, model, epoch, batch_idx):
-        """
-        Visualizes the attention from the goal (CLS token) to all patches across all heads.
+   
+def log_got_attention_map(image, attentions, epoch, batch_idx, img_idx=0):
+    """
+    Visualizes the attention for the cls token from multiple layers as heatmaps over the original image.
+    
+    :param image: torch.Tensor of shape [3, H, W] representing the original image.
+    :param attentions: List of attention maps from each transformer layer. Each attention map is
+                       a tensor of shape [batch, heads, patches], focused on cls token attention.
+    :param patch_size: Size of each image patch.
+    """
+    # Assume attentions list is structured as [layer_attention] with shape [1, heads, num_patches]
+    num_layers = len(attentions)
+    num_heads = attentions[0].shape[1]
+    patch_size = 16  # Patch size used in the model
 
-        Args:
-            attention_map (torch.Tensor): Stored attention map of shape (B, num_heads, N, N).
-            input_image (torch.Tensor): The input image tensor for overlay, shape (B, C, H, W).
-        """
-        attention_maps = []
-        for module in model.network:
-            if isinstance(module, torch.nn.Sequential):
-                for block in module:
-                    if isinstance(block, AttnFFN) and isinstance(block.token_mixer, Attention4D):
-                        attention_maps.append(block.token_mixer.attention_map)
+    # Plot each layer's attention as a heatmap
+    fig, axes = plt.subplots(num_layers, num_heads, figsize=(num_heads * 3, num_layers * 3))
+    for layer_idx, layer_attn in enumerate(attentions):
+        for head_idx in range(num_heads):
+            attn_map = layer_attn[img_idx, head_idx]  # Take attention from this layer and head
 
-        attention_map = attention_maps[-1]  # Last layer's attention map
+            # Reshape attention to grid shape based on image and patch dimensions
+            grid_size = int(image.shape[-1] / patch_size)  # e.g., 128 / 16 = 8
+            attn_map = attn_map.reshape(grid_size, grid_size).detach().cpu()
 
-        # Attention map shape: (B, num_heads, N, N)
-        B, num_heads, N, _ = attention_map.shape
-        
-        # Sum attention across heads for the CLS token (assuming CLS is the first token)
-        cls_attention_all_heads = attention_map[:, :, 0, 1:].sum(dim=1)  # Shape: (B, N-1)
-        
-        # Normalize across the patch dimension for a clearer visualization
-        cls_attention_all_heads = (cls_attention_all_heads - cls_attention_all_heads.min()) / (
-            cls_attention_all_heads.max() - cls_attention_all_heads.min()
-        )
-        
-        # Reshape to match patch grid (assume patches are square-rootable for simplicity)
-        num_patches = int((N - 1) ** 0.5)  # Assuming square grid of patches
-        cls_attention_all_heads = cls_attention_all_heads.view(B, num_patches, num_patches).cpu().numpy()
+            # Upsample the attention map to match the image dimensions
+            attn_map = F.interpolate(
+                attn_map.unsqueeze(0).unsqueeze(0), size=(128, 128), mode="bilinear", align_corners=False
+            ).squeeze()
 
-        # Upsample attention to match input image size
-        upsampled_attention = F.interpolate(
-            torch.tensor(cls_attention_all_heads).unsqueeze(1), size=(input_image.shape[-2], input_image.shape[-1]),
-            mode="bilinear", align_corners=False
-        ).squeeze()
+            # Normalize attention map for better contrast
+            attn_map = (attn_map - attn_map.min()) / (attn_map.max() - attn_map.min())
 
-        # Overlay the attention map on the input image
-        fig, ax = plt.subplots()
-        ax.imshow(input_image[0].permute(1, 2, 0).cpu().numpy(), cmap="gray")  # Adjust for RGB if needed
-        ax.imshow(upsampled_attention[0], cmap="coolwarm", alpha=0.3)
-        plt.colorbar(ax.imshow(upsampled_attention[0], cmap="coolwarm", alpha=0.5))
-        ax.set_title("Attention from Goal (CLS) Token to All Patches Across Heads")
-        cbar = plt.colorbar(ax.imshow(total_attention, cmap="coolwarm", alpha=0.5))
+            normalized_image = torch.where(image == 0.0, 40.0, image)
 
-        plt.show()
+            # Display the attention map overlayed on the original image
+            ax = axes[layer_idx, head_idx] if num_layers > 1 else axes[head_idx]
+            ax.imshow(normalized_image[img_idx, 0].cpu().numpy(), cmap="gray")
+            ax.imshow(attn_map.cpu().detach().numpy(), cmap='coolwarm', alpha=0.5)
+            ax.axis('off')
+            ax.set_title(f'Layer {layer_idx+1}, Head {head_idx+1}')
+    
+    plt.tight_layout()
+    plt.show()
+    fig.canvas.draw()
+    img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    wandb_img = wandb.Image(img, caption=f"Epoch {epoch+1}, Batch {batch_idx+1}")
+    # plt.close(fig)  # Close figure to release memory
 
-        # Capture the figure as an image to log to wandb
-        fig.canvas.draw()
-        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        wandb_img = wandb.Image(img, caption=f"Epoch {epoch+1}, Batch {batch_idx+1}")
-        plt.close(fig)  # Close figure to release memory
-
-        return wandb_img
-
-
+    return wandb_img
 
 def visualize_attention(input_image, model):
     # Loop through model layers to capture attention maps from `Attention4D` modules
