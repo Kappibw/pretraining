@@ -160,7 +160,7 @@ wandb.config.update({
 })
 
 # Load weights
-vit_model.load_state_dict(torch.load("checkpoints/2024-11-12_22-38-22/vit_model_199.pt"))
+# vit_model.load_state_dict(torch.load("checkpoints/2024-11-12_22-38-22/vit_model_199.pt"))
 
 # Training loop
 for epoch in range(NUM_EPOCHS):

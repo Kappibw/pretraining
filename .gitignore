@@ -2,3 +2,5 @@ data/
 checkpoints/
 wandb/
 old_data/
+# Pycache
+*__pycache__/*
