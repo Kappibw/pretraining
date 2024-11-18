@@ -15,13 +15,13 @@ VIT_EMBEDDING_SIZE = 3584
 NUM_EPOCHS = 10
 BATCH_SIZE = 8
 
-# Initialize wandb
-wandb.init(project="efficient_former_pretraining")
-
 # Create a directory to save the models
 time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 save_dir = os.path.join(os.path.dirname(__file__), "checkpoints", time)
 os.makedirs(save_dir, exist_ok=True)
+
+# Initialize wandb
+wandb.init(project="omnidir_nav_pretraining", id=f"efficient_former_{time}")
 
 # Set up the data loaders
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -75,7 +75,7 @@ def evaluate(vit_model, actor_critic, data_loader, loss_fn):
             embeddings = vit_model.forward_omnidir(image_data, goal)
 
             embeddings = embeddings[-1] if vit_model.fork_feat else embeddings
-            combined_input = torch.cat((embeddings, non_image_data), dim=-1)
+            combined_input = torch.cat((non_image_data, embeddings), dim=-1)
             actions_pred = actor_critic.actor(combined_input)
 
             loss = loss_fn(actions_pred, actions)
@@ -87,6 +87,8 @@ def evaluate(vit_model, actor_critic, data_loader, loss_fn):
 
 # Training loop
 for epoch in range(NUM_EPOCHS):
+    vit_model.train()
+    actor_critic.train()
     for batch_idx, (image_data, non_image_data, actions) in enumerate(training_data_loader):
         image_data, non_image_data, actions = image_data.to(device), non_image_data.to(device), actions.to(device)
         goal = non_image_data[:, -3:]
@@ -94,7 +96,7 @@ for epoch in range(NUM_EPOCHS):
 
         embeddings = embeddings[-1] if vit_model.fork_feat else embeddings
 
-        combined_input = torch.cat((embeddings, non_image_data), dim=-1)
+        combined_input = torch.cat((non_image_data, embeddings), dim=-1)
         actions_pred = actor_critic.actor(combined_input)
 
         loss = loss_fn(actions_pred, actions)

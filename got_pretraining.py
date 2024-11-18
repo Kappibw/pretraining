@@ -15,39 +15,16 @@ import wandb
 
 VIT_EMBEDDING_SIZE = 128
 
-NUM_EPOCHS = 200
+NUM_EPOCHS = 50
 BATCH_SIZE = 8
-
-
-def evaluate(vit_model, actor_critic, data_loader):
-    vit_model.eval()
-    actor_critic.eval()
-    
-    total_loss = 0.0
-    num_batches = 0
-
-    with torch.no_grad():
-        for image_data, non_image_data, actions in data_loader:
-            image_data, non_image_data, actions = image_data.to(device), non_image_data.to(device), actions.to(device)
-            goal = non_image_data[:, -3:]
-            embeddings = vit_model.sample_omnidir([image_data, goal])
-            combined_input = torch.cat((embeddings, non_image_data), dim=-1)
-            actions_pred = actor_critic.actor(combined_input)
-
-            loss = torch.sqrt(torch.pow(actions_pred - actions, 2).mean())
-            total_loss += loss.item()
-            num_batches += 1
-
-    avg_loss = total_loss / num_batches
-    return avg_loss
-
-# Initialize wandb
-wandb.init(project="got_pretraining")
 
 # Create a directory to save the models
 time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 save_dir = os.path.join(os.path.dirname(__file__), "checkpoints", time)
 os.makedirs(save_dir, exist_ok=True)
+
+# Initialize wandb
+wandb.init(project="omnidir_nav_pretraining", id=f"got_{time}")
 
 # Set up the data loaders
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -90,8 +67,33 @@ wandb.config.update({
     "learning_rate": 1e-4,
 })
 
+def evaluate(vit_model, actor_critic, data_loader):
+    vit_model.eval()
+    actor_critic.eval()
+    
+    total_loss = 0.0
+    num_batches = 0
+
+    with torch.no_grad():
+        for image_data, non_image_data, actions in data_loader:
+            image_data, non_image_data, actions = image_data.to(device), non_image_data.to(device), actions.to(device)
+            goal = non_image_data[:, -3:]
+            embeddings = vit_model.sample_omnidir([image_data, goal])
+            combined_input = torch.cat((non_image_data, embeddings), dim=-1)
+            actions_pred = actor_critic.actor(combined_input)
+
+            loss = torch.sqrt(torch.pow(actions_pred - actions, 2).mean())
+            total_loss += loss.item()
+            num_batches += 1
+
+    avg_loss = total_loss / num_batches
+    return avg_loss
+
 # Training loop
 for epoch in range(NUM_EPOCHS):
+    vit_model.train()
+    actor_critic.train()
+
     for batch_idx, (image_data, non_image_data, actions) in enumerate(training_data_loader):
         image_data, non_image_data, actions = image_data.to(device), non_image_data.to(device), actions.to(device)
         goal = non_image_data[:, -3:]
@@ -101,13 +103,13 @@ for epoch in range(NUM_EPOCHS):
         # goal_normalized = torch.stack((Dist, heading), dim=1)
         # predict, log_prob, mean = vit_model.sample([image_data, goal])
         embeddings, attention_map = vit_model.sample_omnidir([image_data, goal], return_attention=True)
-        combined_input = torch.cat((embeddings, non_image_data), dim=-1)
+        combined_input = torch.cat((non_image_data, embeddings), dim=-1)
         actions_pred = actor_critic.actor(combined_input)
 
         optimizer.zero_grad()
         loss = torch.sqrt(torch.pow(actions_pred - actions, 2).mean())
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(vit_model.parameters(), 10) # TODO(kappi): what is this
+        # torch.nn.utils.clip_grad_norm_(vit_model.parameters(), 10) # TODO(kappi): Is this just for PPO, should I leave this out?
         optimizer.step()
 
         if batch_idx % 10 == 0:

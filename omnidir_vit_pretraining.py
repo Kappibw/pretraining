@@ -16,13 +16,13 @@ VIT_EMBEDDING_SIZE = 128
 NUM_EPOCHS = 100
 BATCH_SIZE = 8
 
-# Initialize wandb
-wandb.init(project="comnidir_vit_pretraining")
-
 # Create a directory to save the models
 time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 save_dir = os.path.join(os.path.dirname(__file__), "checkpoints", time)
 os.makedirs(save_dir, exist_ok=True)
+
+# Initialize wandb
+wandb.init(project="omnidir_nav_pretraining", id=f"omnidir_vit_{time}")
 
 # Set up the data loaders
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -91,10 +91,6 @@ for epoch in range(NUM_EPOCHS):
         image_data, non_image_data, actions = image_data.to(device), non_image_data.to(device), actions.to(device)
         goal = non_image_data[:, -3:]
 
-        # Dist  = torch.minimum(goal[:,0]/15, torch.tensor(1.0))
-        # heading = goal[:, 1] / np.pi
-        # goal_normalized = torch.stack((Dist, heading), dim=1)
-        # predict, log_prob, mean = vit_model.sample([image_data, goal])
         embeddings = vit_model(image_data, goal)
         combined_input = torch.cat((non_image_data, embeddings), dim=-1)
         actions_pred = actor_critic.actor(combined_input)

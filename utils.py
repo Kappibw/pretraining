@@ -72,9 +72,66 @@ def log_attention_mask(input_image, model, epoch, batch_idx):
 
         return wandb_img
     
+def log_got_attention_map(image, attentions, epoch, batch_idx, img_idx=0):
+    """
+    Visualizes the averaged attention for the cls token across all heads from multiple layers 
+    as heatmaps over the original image.
+
+    :param image: torch.Tensor of shape [3, H, W] representing the original image.
+    :param attentions: List of attention maps from each transformer layer. Each attention map is
+                       a tensor of shape [batch, heads, patches], focused on cls token attention.
+    :param epoch: Current training epoch.
+    :param batch_idx: Current batch index.
+    :param img_idx: Index of the image within the batch to visualize.
+    """
+    # Assume attentions list is structured as [layer_attention] with shape [1, heads, num_patches]
+    num_layers = len(attentions)
+    patch_size = 16  # Patch size used in the model
+
+    # Prepare plot for each layer's averaged attention
+    fig, axes = plt.subplots(num_layers, 1, figsize=(5, num_layers * 5))
+    if num_layers == 1:
+        axes = [axes]  # Ensure axes is iterable for single layer case
+
+    for layer_idx, layer_attn in enumerate(attentions):
+        # Average attention across all heads
+        avg_attn_map = layer_attn[img_idx].mean(dim=0)  # Shape: [num_patches]
+
+        # Reshape attention to grid shape based on image and patch dimensions
+        grid_size = int(image.shape[-1] / patch_size)  # e.g., 128 / 16 = 8
+        avg_attn_map = avg_attn_map.reshape(grid_size, grid_size).detach().cpu()
+
+        # Upsample the attention map to match the image dimensions
+        avg_attn_map = F.interpolate(
+            avg_attn_map.unsqueeze(0).unsqueeze(0), size=(128, 128), mode="bilinear", align_corners=False
+        ).squeeze()
+
+        # Normalize attention map for better contrast
+        avg_attn_map = (avg_attn_map - avg_attn_map.min()) / (avg_attn_map.max() - avg_attn_map.min())
+
+        normalized_image = torch.where(image == 0.0, 40.0, image)
+
+        # Display the attention map overlayed on the original image
+        ax = axes[layer_idx]
+        ax.imshow(normalized_image[img_idx, 0].cpu().numpy(), cmap="gray")
+        ax.imshow(avg_attn_map.cpu().numpy(), cmap="coolwarm", alpha=0.5)
+        ax.axis("off")
+        ax.set_title(f"Layer {layer_idx + 1}")
+
+    plt.tight_layout()
+    # plt.show()
+
+    # Convert the plot to an image for wandb
+    fig.canvas.draw()
+    img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    wandb_img = wandb.Image(img, caption=f"Epoch {epoch+1}, Batch {batch_idx+1}")
+    plt.close(fig)  # Close figure to release memory
+
+    return wandb_img
 
    
-def log_got_attention_map(image, attentions, epoch, batch_idx, img_idx=0):
+def log_got_attention_map_separate_heads(image, attentions, epoch, batch_idx, img_idx=0):
     """
     Visualizes the attention for the cls token from multiple layers as heatmaps over the original image.
     

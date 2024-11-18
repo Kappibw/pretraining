@@ -26,7 +26,7 @@
             "console": "integratedTerminal",
         },
         {
-            "name": "Python Debugger: Test Compilable GoT Model",
+            "name": "Python Debugger: Test Omnidir ViT Model",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/omnidir_vit_pretraining.py",
