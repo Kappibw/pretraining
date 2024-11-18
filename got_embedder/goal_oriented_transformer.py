@@ -1,23 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Wed Jul  6 14:36:28 2022
-
-@author: oscar
-"""
 
 import torch
 from torch import nn
-
-from einops import rearrange, repeat
-from einops.layers.torch import Rearrange
-
-# helpers
-
-
-def pair(t):
-    return t if isinstance(t, tuple) else (t, t)
-
+import torch.nn.functional as F
 
 # classes
 
@@ -27,9 +13,6 @@ class PreNorm(nn.Module):
         super().__init__()
         self.norm = nn.LayerNorm(dim)
         self.fn = fn
-
-    # def forward(self, x, **kwargs):
-    #     return self.fn(self.norm(x), **kwargs)
 
     def forward(self, x):
         return self.fn(self.norm(x))
@@ -73,20 +56,18 @@ class Attention(nn.Module):
         # return_attention = False # TODO: Remove this line
         qkv = self.to_qkv(x).chunk(3, dim=-1)
 
+        # q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.heads), qkv)
         q, k, v = [self.rearrange_qkv(t, self.heads) for t in qkv]
 
-        # q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.heads), qkv)
         dots = torch.matmul(q, k.transpose(-1, -2)) * self.scale
         attn = self.attend(dots)
         attn = self.dropout(attn)
 
         out = torch.matmul(attn, v)
-        out = self.rearrange_back(out)
         # out = rearrange(out, "b h n d -> b n (h d)")
+        out = self.rearrange_back(out)
         out = self.to_out(out)
 
-        # if return_attention:
-        #     return out, attn
         return out
 
 
@@ -139,19 +120,21 @@ class GoT(nn.Module):
         heads=4,
         goal_size=3,
         mlp_dim=2048,
-        pool="cls",
         channels=3,
         dim_head=64,
         dropout=0.0,
         emb_dropout=0.0
     ):
         super().__init__()
-        image_height, image_width = pair(image_size)
-        patch_height, patch_width = pair(patch_size)
+        image_height, image_width = image_size
+        patch_height, patch_width = patch_size
         ####### Add LayerNormalization ########
         self.layer_norm = nn.LayerNorm(dim)
 
         self.fc_embed = nn.Linear(goal_size, 32)
+
+        self.fc1 = nn.Linear(32,128)
+        self.fc2 = nn.Linear(128,128)
 
         assert (
             image_height % patch_height == 0 and image_width % patch_width == 0
@@ -159,7 +142,6 @@ class GoT(nn.Module):
 
         num_patches = (image_height // patch_height) * (image_width // patch_width)
         patch_dim = channels * patch_height * patch_width
-        assert pool in {"cls", "mean"}, "pool type must be either cls (cls token) or mean (mean pooling)"
 
         self.to_patch_embedding = nn.Sequential(
             RearrangePatchEmbedding(patch_height, patch_width),
@@ -172,7 +154,6 @@ class GoT(nn.Module):
 
         self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout)
 
-        self.pool = pool
         self.to_latent = nn.Identity()
 
         self.mlp_head = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, num_classes))
@@ -189,9 +170,14 @@ class GoT(nn.Module):
 
         x = self.transformer(x)
 
-        x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
+        # Get cls token
+        x = x[:, 0]
 
         x = self.to_latent(x)
         x = self.layer_norm(x)
         # return self.mlp_head(x)
+
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+
         return x
