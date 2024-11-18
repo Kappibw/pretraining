@@ -15,24 +15,21 @@
             "name": "Python Debugger: Test EfficientFormer Model",
             "type": "debugpy",
             "request": "launch",
-            "args" : ["--num_envs", "10"],
-            "program": "${workspaceFolder}/test_efficient_former.py",
+            "program": "${workspaceFolder}/efficient_former_pretraining.py",
             "console": "integratedTerminal",
         },
         {
             "name": "Python Debugger: Test GoT Model",
             "type": "debugpy",
             "request": "launch",
-            "args" : ["--num_envs", "10"],
-            "program": "${workspaceFolder}/test_got.py",
+            "program": "${workspaceFolder}/got_pretraining.py",
             "console": "integratedTerminal",
         },
         {
             "name": "Python Debugger: Test Compilable GoT Model",
             "type": "debugpy",
             "request": "launch",
-            "args" : ["--num_envs", "10"],
-            "program": "${workspaceFolder}/test_compilable_got.py",
+            "program": "${workspaceFolder}/omnidir_vit_pretraining.py",
             "console": "integratedTerminal",
         }
     ]

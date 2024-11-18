@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 import wandb
+import os
 import numpy as np
 
 from efficient_former.efficientformer_models import AttnFFN, Attention4D
@@ -10,6 +11,24 @@ import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
+###########################
+##### TRAINING UTILS ######
+###########################
+
+def save(vit_model, actor_critic, save_dir, idx):
+    vit_model_path = os.path.join(save_dir, f"vit_model_{idx}.pt")
+    actor_critic_path = os.path.join(save_dir, f"actor_critic_{idx}.pt")
+
+    # Save the models' state dictionaries
+    torch.save(vit_model.state_dict(), vit_model_path)
+    torch.save(actor_critic.state_dict(), actor_critic_path)
+
+    print(f"Model idx {idx} saved to {save_dir}")
+
+
+##############################
+#### VISUALIZATION UTILS #####
+##############################
 
 def log_attention_mask(input_image, model, epoch, batch_idx):
     attention_maps = []
