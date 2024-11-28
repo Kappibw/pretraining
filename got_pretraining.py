@@ -57,6 +57,8 @@ block = 2
 head = 4 # TODO(kappi): see what params they used in the paper
 vit_model = GoTPolicy(num_actions, goal_size, block, head).to(device)
 
+print(f"Vit Model: {vit_model}")
+
 # Optimizer and loss
 optimizer = Adam(list(vit_model.parameters()) + list(actor_critic.actor.parameters()), lr=1e-4)
 

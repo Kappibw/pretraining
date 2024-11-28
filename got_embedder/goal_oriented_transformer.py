@@ -120,7 +120,7 @@ class GoT(nn.Module):
         heads=4,
         goal_size=3,
         mlp_dim=2048,
-        channels=3,
+        channels=2,
         dim_head=64,
         dropout=0.0,
         emb_dropout=0.0
@@ -158,6 +158,10 @@ class GoT(nn.Module):
 
         self.mlp_head = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, num_classes))
 
+        # Print out the model
+        print("VIT Model \n\n")
+        print(self)
+
     def forward(self, img, goal):
         goal = self.fc_embed(goal)
         x = self.to_patch_embedding(img)
@@ -181,3 +185,91 @@ class GoT(nn.Module):
         x = F.relu(self.fc2(x))
 
         return x
+
+
+##############################################
+### Version with attention maps returned #####
+##############################################
+
+class AttentionWithMaps(Attention):
+    def forward(self, x):
+        qkv = self.to_qkv(x).chunk(3, dim=-1)
+        q, k, v = [self.rearrange_qkv(t, self.heads) for t in qkv]
+
+        dots = torch.matmul(q, k.transpose(-1, -2)) * self.scale
+        attn = self.attend(dots)
+        attn = self.dropout(attn)
+
+        out = torch.matmul(attn, v)
+        out = self.rearrange_back(out)
+        out = self.to_out(out)
+
+        # Return both the output and attention maps
+        return out, attn
+
+
+class PreNormWithMaps(nn.Module):
+    def __init__(self, dim, fn):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        self.fn = fn
+
+    def forward(self, x):
+        out, attn = self.fn(self.norm(x))
+        return out, attn
+
+
+class TransformerWithMaps(nn.Module):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout=0.0):
+        super().__init__()
+        self.attention_layers = nn.ModuleList(
+            [PreNormWithMaps(dim, AttentionWithMaps(dim, heads=heads, dim_head=dim_head, dropout=dropout)) for _ in range(depth)]
+        )
+        self.feedforward_layers = nn.ModuleList(
+            [PreNorm(dim, FeedForward(dim, mlp_dim, dropout=dropout)) for _ in range(depth)]
+        )
+
+    def forward(self, x):
+        attentions = []
+        for attn, ff in zip(self.attention_layers, self.feedforward_layers):
+            attn_out, attn_map = attn(x)
+            x = attn_out + x
+            attentions.append(attn_map)
+            x = ff(x) + x
+        return x, attentions
+
+
+class GoTWithAttentionMaps(GoT):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.transformer = TransformerWithMaps(
+            dim=kwargs['dim'],
+            depth=kwargs['depth'],
+            heads=kwargs['heads'],
+            dim_head=kwargs['dim_head'],
+            mlp_dim=kwargs['mlp_dim'],
+            dropout=kwargs['dropout']
+        )
+
+    def forward(self, img, goal):
+        goal = self.fc_embed(goal)
+        x = self.to_patch_embedding(img)
+        b, n, _ = x.shape
+
+        cls_tokens = torch.unsqueeze(goal, dim=1)
+        x = torch.cat((cls_tokens, x), dim=1)
+        x += self.pos_embedding[:, : (n + 1)]
+        x = self.dropout(x)
+
+        x, attentions = self.transformer(x)
+
+        # Get cls token
+        x = x[:, 0]
+
+        x = self.to_latent(x)
+        x = self.layer_norm(x)
+
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+
+        return x, attentions

@@ -31,6 +31,13 @@
             "request": "launch",
             "program": "${workspaceFolder}/omnidir_vit_pretraining.py",
             "console": "integratedTerminal",
+        },
+        {
+            "name": "Python Debugger: Visualize Attention",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/visualize_attention.py",
+            "console": "integratedTerminal",
         }
     ]
 }

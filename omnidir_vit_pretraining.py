@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.optim import Adam
 from rsl_rl.modules import ActorCritic
 from torch.utils.data import DataLoader
-from omnidir_vit.goal_oriented_transformer import GoT
+from got_embedder.goal_oriented_transformer import GoT
 import utils
 from data_loader import PKLDataset
 import wandb
@@ -13,8 +13,8 @@ import wandb
 
 VIT_EMBEDDING_SIZE = 128
 
-NUM_EPOCHS = 100
-BATCH_SIZE = 8
+NUM_EPOCHS = 200
+BATCH_SIZE = 32
 
 # Create a directory to save the models
 time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -49,7 +49,7 @@ num_actions = actions.shape[1]
 actor_critic = ActorCritic(num_actor_obs=num_actor_obs, num_critic_obs=num_critic_obs, num_actions=num_actions, **actor_policy_cfg).to(device)
 
 # Instantiate the VIT model
-vit_model = GoT().to(device)
+vit_model = GoT(dropout=0.2, emb_dropout=0.2).to(device)
 
 # Optimizer and loss
 optimizer = Adam(list(vit_model.parameters()) + list(actor_critic.actor.parameters()), lr=1e-4)
@@ -71,6 +71,8 @@ def evaluate(vit_model, actor_critic, data_loader):
     with torch.no_grad():
         for image_data, non_image_data, actions in data_loader:
             image_data, non_image_data, actions = image_data.to(device), non_image_data.to(device), actions.to(device)
+            # Image data is 3 repeated channels, just take the first two
+            image_data = image_data[:, :2]
             goal = non_image_data[:, -3:]
             embeddings = vit_model(image_data, goal)
             combined_input = torch.cat((non_image_data, embeddings), dim=-1)
@@ -83,12 +85,15 @@ def evaluate(vit_model, actor_critic, data_loader):
     avg_loss = total_loss / num_batches
     return avg_loss
 
+min_val_loss = float("inf")
 # Training loop
 for epoch in range(NUM_EPOCHS):
     vit_model.train()
     actor_critic.train()
     for batch_idx, (image_data, non_image_data, actions) in enumerate(training_data_loader):
         image_data, non_image_data, actions = image_data.to(device), non_image_data.to(device), actions.to(device)
+        # Image data is 3 repeated channels, just take the first two
+        image_data = image_data[:, :2]
         goal = non_image_data[:, -3:]
 
         embeddings = vit_model(image_data, goal)
@@ -108,12 +113,18 @@ for epoch in range(NUM_EPOCHS):
             #     wandb.log({"epoch": epoch+1, "batch": batch_idx+1, "loss": loss.item(), "attention_map": image})
             # else:
             wandb.log({"epoch": epoch+1, "batch": batch_idx+1, "loss": loss.item()})
-    utils.save(vit_model, actor_critic, save_dir, epoch)
+    
 
     # Run evaluation
     val_loss = evaluate(vit_model, actor_critic, eval_data_loader)
+
     print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Validation Loss: {val_loss}")
     wandb.log({"epoch": epoch+1, "val_loss": val_loss})
+
+    # Save the model if the validation loss is the lowest so far
+    if val_loss < min_val_loss or epoch == NUM_EPOCHS - 1:
+        min_val_loss = val_loss
+        utils.save(vit_model, actor_critic, save_dir, epoch)
 
 print("Training completed.")
 wandb.finish()

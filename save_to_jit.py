@@ -10,7 +10,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 vit_model = GoT().to(device)
 
 ##### LOADING MODEL #####
-vit_model.load_state_dict(torch.load("checkpoints/2024-11-17_18-15-13/vit_model_11.pt"))
+vit_model.load_state_dict(torch.load("checkpoints/2024-11-25_14-47-10/vit_model_182.pt"))
 
 #### EXAMPLE DATA FOR TRACE ###
 BATCH_SIZE = 8
@@ -24,6 +24,7 @@ for image_data, non_image_data, actions in training_data_loader:
 #### SAVING MODEL ######
 
 #Convert to TorchScript
+image_data = image_data[:, :2]
 goal = non_image_data[:, -3:].to(device)
 image_data = image_data.to(device)
 vit_model.eval()
@@ -33,4 +34,4 @@ traced_model = torch.jit.trace(vit_model, (image_data, goal))
 optimized_model = torch.jit.optimize_for_inference(traced_model)
 
 # Save the optimized model
-optimized_model.save("optimized_got_model.pt")
+optimized_model.save("2024-11-25_14-47-10_vit_182.pt")

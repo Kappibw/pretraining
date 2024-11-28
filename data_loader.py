@@ -34,26 +34,36 @@ class PKLDataset(Dataset):
                     
                     # Reshape and process each batch
                     reshaped_image_data = reshaped_image_data[:, :4, :, :, :]
-                    reshaped_image_data = reshaped_image_data[:, [0, 3, 1, 2], :, :]
-                    
-                    depth_channel = reshaped_image_data[..., 0:1].view(
-                        batch_image_data.shape[0], SPHERE_IMAGE_WIDTH, SPHERE_IMAGE_HEIGHT, 1
-                    )
-                    semantics_channel = reshaped_image_data[..., 1:2].view(
-                        batch_image_data.shape[0], SPHERE_IMAGE_WIDTH, SPHERE_IMAGE_HEIGHT, 1
-                    )
-                    
-                    # TODO: Use semantics once they aren't junk.
-                    batch_image_data = torch.cat((depth_channel, depth_channel, depth_channel), dim=-1)
-                    batch_image_data = batch_image_data.view(
-                        batch_image_data.shape[0], 2, int(SPHERE_IMAGE_WIDTH / 2), SPHERE_IMAGE_HEIGHT, 3
-                    )
-                    batch_image_data = batch_image_data.permute(0, 4, 2, 1, 3).reshape(
-                        batch_image_data.shape[0], 3, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE
-                    )
-                    
-                    # Rotate 90 degrees clockwise
-                    batch_image_data = torch.rot90(batch_image_data, k=-1, dims=(2, 3))
+
+                    front = reshaped_image_data[:, 0]  # Shape: [batch, 64, 64]
+                    back = reshaped_image_data[:, 1]  # Shape: [batch, 64, 64]
+                    left = reshaped_image_data[:, 2]  # Shape: [batch, 64, 64]
+                    right = reshaped_image_data[:, 3]  # Shape: [batch, 64, 64]
+
+                    # Step 2: Arrange the images in the desired order
+                    # Combine the images in the top row and bottom row
+                    top_row = torch.cat((front, right), dim=2)  # Shape: [batch, 64, 128]
+                    bottom_row = torch.cat((back, left), dim=2)  # Shape: [batch, 64, 128]
+
+                    del front, left, back, right
+
+                    # Step 3: Stack the rows vertically
+                    image_data = torch.cat((top_row, bottom_row), dim=1)
+
+                    # Normalize the image data between 0 and 1
+                    image_data[image_data > 40.0] = 40.0
+                    image_data = image_data / 40.0
+
+                    # Step 4: Overwrite values of 0.0 with -1.0
+                    # TODO(kappi): Remove when the data is collected again.
+                    image_data[image_data == 0.0] = -1.0
+
+                    # Add a third channel
+                    # TODO(Kappi): Just train with 2
+                    image_data = torch.cat((image_data, image_data[...,0:1]), dim=-1)
+                    # Make the image data 3 channels first.
+                    batch_image_data = image_data.permute(0, 3, 1, 2)
+
                     batch_non_image_data = data["observations"][start_idx:end_idx, :IMAGE_START_IDX]
                     batch_actions = data["actions"][start_idx:end_idx]
 

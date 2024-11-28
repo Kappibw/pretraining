@@ -126,7 +126,7 @@ def log_got_attention_map(image, attentions, epoch, batch_idx, img_idx=0):
     img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
     img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
     wandb_img = wandb.Image(img, caption=f"Epoch {epoch+1}, Batch {batch_idx+1}")
-    plt.close(fig)  # Close figure to release memory
+    # plt.close(fig)  # Close figure to release memory
 
     return wandb_img
 
