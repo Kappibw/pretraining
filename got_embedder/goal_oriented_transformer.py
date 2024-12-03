@@ -112,7 +112,7 @@ class GoT(nn.Module):
     def __init__(
         self,
         *,
-        image_size=(128, 128),
+        image_size=(64, 256),
         patch_size=(16, 16),
         num_classes=2,
         dim=32,
@@ -123,7 +123,8 @@ class GoT(nn.Module):
         channels=2,
         dim_head=64,
         dropout=0.0,
-        emb_dropout=0.0
+        emb_dropout=0.0,
+        mean_pool=False
     ):
         super().__init__()
         image_height, image_width = image_size
@@ -135,6 +136,8 @@ class GoT(nn.Module):
 
         self.fc1 = nn.Linear(32,128)
         self.fc2 = nn.Linear(128,128)
+
+        self.pool = mean_pool
 
         assert (
             image_height % patch_height == 0 and image_width % patch_width == 0
@@ -174,8 +177,8 @@ class GoT(nn.Module):
 
         x = self.transformer(x)
 
-        # Get cls token
-        x = x[:, 0]
+        # Get cls token or mean if pool is True
+        x = x.mean(dim=1) if self.pool else x[:, 0]
 
         x = self.to_latent(x)
         x = self.layer_norm(x)

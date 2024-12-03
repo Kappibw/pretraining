@@ -25,6 +25,14 @@ def save(vit_model, actor_critic, save_dir, idx):
 
     print(f"Model idx {idx} saved to {save_dir}")
 
+def cartesian_to_polar(cartesian_coords: torch.Tensor) -> torch.Tensor:
+    # Radius
+    r = torch.norm(cartesian_coords, dim=-1)
+    # Azimuth (angle in the xy-plane)
+    phi = torch.atan2(cartesian_coords[..., 1], cartesian_coords[..., 0])
+    # Return a tensor of shape [batch, 2] with r and phi
+    return torch.stack((r, phi), dim=1)
+
 
 ##############################
 #### VISUALIZATION UTILS #####

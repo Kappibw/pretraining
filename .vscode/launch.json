@@ -12,21 +12,21 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Python Debugger: Test EfficientFormer Model",
+            "name": "Python Debugger: Train EfficientFormer Model",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/efficient_former_pretraining.py",
             "console": "integratedTerminal",
         },
         {
-            "name": "Python Debugger: Test GoT Model",
+            "name": "Python Debugger: Train GoT Model",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/got_pretraining.py",
             "console": "integratedTerminal",
         },
         {
-            "name": "Python Debugger: Test Omnidir ViT Model",
+            "name": "Python Debugger: Train Omnidir ViT Model",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/omnidir_vit_pretraining.py",
@@ -37,6 +37,13 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/visualize_attention.py",
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "Python Debugger: Test Data Loader",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/test_data_loader.py",
             "console": "integratedTerminal",
         }
     ]
