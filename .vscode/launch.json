@@ -19,10 +19,10 @@
             "console": "integratedTerminal",
         },
         {
-            "name": "Python Debugger: Train GoT Model",
+            "name": "Python Debugger: Train Singapore GoT Model",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/got_pretraining.py",
+            "program": "${workspaceFolder}/got_singapore_pretraining.py",
             "console": "integratedTerminal",
         },
         {

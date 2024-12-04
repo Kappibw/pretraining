@@ -9,6 +9,7 @@ from got_embedder.goal_oriented_transformer import GoT
 import utils
 from data_loader import PKLDatasetStrip, PKLDatasetStripHistory
 import wandb
+import torch.nn.functional as F
 
 
 VIT_EMBEDDING_SIZE = 128
@@ -29,9 +30,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 training_data_dir = os.path.join(os.path.dirname(__file__), "data/training")
 eval_data_dir = os.path.join(os.path.dirname(__file__), "data/eval")
 
-training_dataset = PKLDatasetStripHistory(training_data_dir)
+training_dataset = PKLDatasetStrip(training_data_dir)
 training_data_loader = DataLoader(training_dataset, batch_size=BATCH_SIZE, shuffle=True)
-eval_dataset = PKLDatasetStripHistory(eval_data_dir)
+eval_dataset = PKLDatasetStrip(eval_data_dir)
 eval_data_loader = DataLoader(eval_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
 # Instantiate the actor-critic model
@@ -70,7 +71,7 @@ vit_model = GoT(
     dropout=0.1,
     channels=2,
     emb_dropout=0.1,
-    mean_pool=True,
+    mean_pool=False,
 ).to(device)
 
 # Optimizer and loss
@@ -134,7 +135,8 @@ for epoch in range(NUM_EPOCHS):
         actions_pred = actor_critic.actor(combined_input)
 
         optimizer.zero_grad()
-        loss = torch.sqrt(torch.pow(actions_pred - actions, 2).mean()) # change to torch.mse
+        loss = F.mse_loss(actions_pred, actions)
+        # loss = torch.sqrt(torch.pow(actions_pred - actions, 2).mean()) # change to torch.mse
         loss.backward()
         torch.nn.utils.clip_grad_norm_(vit_model.parameters(), 10)  # TODO(kappi):see if this helps
         optimizer.step()
