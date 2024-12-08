@@ -1,20 +1,23 @@
 import os
 import pickle
 import torch
+import utils
 from torch.utils.data import Dataset
 
-SPHERE_IMAGE_HEIGHT = 64
+SPHERE_IMAGE_HEIGHT = 48
 SPHERE_IMAGE_SIDES = 6
 SPHERE_IMAGE_WIDTH = SPHERE_IMAGE_HEIGHT * 4
 IMAGE_START_IDX = 33
 INPUT_IMAGE_SIZE = SPHERE_IMAGE_HEIGHT * 2
 
 class PKLDatasetSquare(Dataset):
-    def __init__(self, data_dir, transform=None):
+    def __init__(self, data_dir, include_paths=False, transform=None):
         self.data_files = [os.path.join(data_dir, file) for file in os.listdir(data_dir) if file.endswith(".pkl")]
         self.transform = transform
         self.samples = []
         self.batch_load_size = 5000
+        weights = torch.linspace(0, 1, steps=5).unsqueeze(0) 
+        self.include_paths = include_paths
 
         # Load all data from each pickle file once and store it in `self.samples`
         for file in self.data_files:
@@ -59,8 +62,30 @@ class PKLDatasetSquare(Dataset):
                     batch_non_image_data = data["observations"][start_idx:end_idx, :IMAGE_START_IDX]
                     batch_actions = data["actions"][start_idx:end_idx]
 
-                    # Add the batch to the samples
-                    self.samples.extend(zip(batch_image_data, batch_non_image_data, batch_actions))
+                    # Extract paths
+                    if self.include_paths:
+                        paths = data["waypoints"][start_idx:end_idx]
+                        max_indices = torch.tensor([torch.unique(path, dim=0).shape[0] for path in paths])
+                        end_indices = torch.argmin(torch.norm(paths - batch_non_image_data[:, -3:].unsqueeze(1), dim=2), dim=1)
+                        end_distance = torch.min(torch.norm(paths - batch_non_image_data[:, -3:].unsqueeze(1), dim=2), dim=1)
+
+                        end_indices = torch.min(end_indices, max_indices)
+                        start_indices = torch.argmin(torch.norm(paths, dim=2), dim=1)
+                        start_distance = torch.min(torch.norm(paths, dim=2), dim=1)
+                        
+                        indices = (weights * (end_indices - start_indices).unsqueeze(1)).round().long() + start_indices.unsqueeze(1)
+                        indices = indices.unsqueeze(-1).expand(-1, -1, 3)
+                        sampled_waypoints = torch.gather(paths, dim=1, index=indices)
+
+                        # for x in range(0, batch_image_data.shape[0]):
+                        #     print(x)
+                        #     utils.visualize_training_data_torch(batch_non_image_data, batch_image_data, batch_actions, sampled_waypoints, sampled_waypoints, x)
+
+                        self.samples.extend(zip(batch_image_data, batch_non_image_data, batch_actions, sampled_waypoints))
+
+                    else:
+                        # Add the batch to the samples
+                        self.samples.extend(zip(batch_image_data, batch_non_image_data, batch_actions))
 
     def __len__(self):
         return len(self.samples)

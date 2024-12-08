@@ -311,3 +311,85 @@ def visualize_cube_sphere(cube_tensor, camera_data=None):
             i += 1
 
     plt.show()
+
+
+# Example usage (ensure your tensors are on the CPU or use `.cpu()` when passing them in):
+# visualize_training_data_torch(non_image_observations, image_data, actions, waypoints, batch_idx=0)
+def visualize_training_data_torch(
+    non_image_observations, 
+    image_data, 
+    actions, 
+    waypoints,
+    pred_waypoints, 
+    batch_idx
+):
+    """
+    Visualizes a single batch of training data with image and top-down view (PyTorch version).
+    
+    Args:
+    - non_image_observations (torch.Tensor): [batch_size, 33], non-image observations.
+    - image_data (torch.Tensor): [batch_size, 3, 128, 128], image data (using the first channel only).
+    - actions (torch.Tensor): [batch_size, 3], velocity commands [x, y, z].
+    - waypoints (torch.Tensor): [batch_size, path_len, 3], waypoints to the goal in the base frame.
+    - batch_idx (int): Index of the batch to visualize.
+    """
+    # Extract relevant data for the batch
+    batch_obs = non_image_observations[batch_idx].cpu().numpy()
+    image = image_data[batch_idx, 0].cpu().numpy()  # Take the first channel of the image
+    action = actions[batch_idx].cpu().numpy()
+    waypoints_batch = waypoints[batch_idx].cpu().numpy()
+    pred_waypoints_batch = pred_waypoints[batch_idx].cpu().view([5,3]).numpy()
+    
+    # Calculate padding
+    repeated_count = 0
+    for i in range(len(waypoints_batch) - 1, 0, -1):
+        if np.allclose(waypoints_batch[i], waypoints_batch[i - 1]):
+            repeated_count += 1
+        else:
+            break
+    
+    # Extract observations for plotting
+    base_lin_vel = batch_obs[:3]  # x, y, z
+    goal_command = batch_obs[-3:]  # Last 3 entries
+    
+    # Setup figure and axes
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    
+    # Plot the image
+    axes[0].imshow(image, cmap="gray")
+    axes[0].set_title("Agent's View (First Channel)")
+    axes[0].axis("off")
+    
+    # Top-down view
+    ax = axes[1]
+    ax.quiver(0, 0, base_lin_vel[0], base_lin_vel[1], color="blue", angles="xy", scale_units="xy", scale=1, label="Current Velocity")
+    ax.quiver(0, 0, action[0], action[1], color="red", angles="xy", scale_units="xy", scale=1, label="Action")
+    
+    # Plot waypoints
+    ax.plot(waypoints_batch[:, 0], waypoints_batch[:, 1], "o-", label="Waypoints", color="purple")
+    ax.plot(pred_waypoints_batch[:, 0], pred_waypoints_batch[:, 1], "o-", label="Pred Waypoints", color="orange")
+
+    # Plot the goal as a marker
+    ax.plot(goal_command[0], goal_command[1], "g*", markersize=20, label="Goal Position")
+    
+    # Find bounds
+    min_x = min(min(np.min(waypoints_batch[:, 0]), np.min(pred_waypoints_batch[:, 0])), goal_command[0])
+    max_x = max(max(np.max(waypoints_batch[:, 0]), np.max(pred_waypoints_batch[:, 0])), goal_command[0])
+    min_y = min(min(np.min(waypoints_batch[:, 1]), np.min(pred_waypoints_batch[:, 1])), goal_command[1])
+    max_y = max(max(np.max(waypoints_batch[:, 1]), np.max(pred_waypoints_batch[:, 1])), goal_command[1])
+
+    # Configure top-down view
+    ax.set_xlim([min_x - 0.5, max_x + 0.5])
+    ax.set_ylim([min_y - 0.5, max_y + 0.5])
+    ax.set_title("Top-Down View")
+    ax.set_xlabel("X-axis (m)")
+    ax.set_ylabel("Y-axis (m)")
+    ax.grid(True)
+    ax.axhline(0, color="black", linewidth=0.5)
+    ax.axvline(0, color="black", linewidth=0.5)
+    ax.legend()
+    ax.set_aspect("equal", adjustable="box")
+    
+    # Show the plots
+    plt.tight_layout()
+    plt.show()
