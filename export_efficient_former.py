@@ -10,18 +10,18 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Instantiate the VIT model
 # vit_model = GoT().to(device)
-vit_model = efficientformerv2_s1(pretrained=False, resolution=128, distillation = False).to(device)
+vit_model = efficientformerv2_s1(pretrained=False, resolution=96, distillation = False).to(device)
 
 ##### LOADING MODEL #####
-vit_model.load_state_dict(torch.load("checkpoints/2024-12-04_11-44-01/vit_model_105.pt"))
+vit_model.load_state_dict(torch.load("checkpoints/2024-12-08_20-44-04/vit_model_52.pt"))
 
 #### EXAMPLE DATA FOR TRACE ###
 BATCH_SIZE = 8
-training_data_dir = os.path.join(os.path.dirname(__file__), "data/training_easy")
-training_dataset = PKLDatasetSquare(training_data_dir)
+training_data_dir = os.path.join(os.path.dirname(__file__), "data/eval_paths")
+training_dataset = PKLDatasetSquare(training_data_dir, include_paths=True)
 training_data_loader = DataLoader(training_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-for image_data, non_image_data, actions in training_data_loader:
+for image_data, non_image_data, actions, waypoints in training_data_loader:
     break
 
 #### SAVING MODEL ######
@@ -46,4 +46,4 @@ image_data = image_data.to(device)
 vit_model.eval()
 traced_model = export(wrapped_model, args=(image_data, goal), dynamic_shapes=dynamic_shapes)
 
-torch.export.save(traced_model, "2024-12-04_11-44-01_vit_105.pt")
+torch.export.save(traced_model, "2024-12-08_20-44-04_vit_52.pt")

@@ -36,7 +36,7 @@
             "name": "Python Debugger: Visualize Attention",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/visualize_attention.py",
+            "program": "${workspaceFolder}/visualize_attention_efficient_former.py",
             "console": "integratedTerminal",
         },
         {

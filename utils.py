@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 import wandb
 import os
+import math
 import numpy as np
 
 from efficient_former.efficientformer_models import AttnFFN, Attention4D
@@ -190,19 +191,20 @@ def log_got_attention_map_separate_heads(image, attentions, epoch, batch_idx, im
 
     return wandb_img
 
-def visualize_attention(input_image, model):
+def visualize_attention(input_image, model, layer_idx=-1, img_size=128):
     # Loop through model layers to capture attention maps from `Attention4D` modules
     attention_maps = []
     for module in model.network:
         if isinstance(module, torch.nn.Sequential):
             for block in module:
                 if isinstance(block, AttnFFN) and isinstance(block.token_mixer, Attention4D):
+                    print(f"Layer resolution: {block.token_mixer.resolution}")
                     attention_maps.append(block.token_mixer.attention_map)  # Retrieve the saved attention map
 
     # Visualize the attention maps
     # Example visualization for the last attention map captured
     if attention_maps:
-        attn_map = attention_maps[-1][0]  # Last layer's attention map, first sample in the batch
+        attn_map = attention_maps[layer_idx][0]  # First sample in the batch. Shape: (B, num_heads, H*W, H*W)
         num_heads = attn_map.shape[0]
 
         # Upsample each head's attention to 128x128 and overlay on the input image
@@ -210,10 +212,12 @@ def visualize_attention(input_image, model):
         for i in range(num_heads):
             ax = axes[i]
             # Reshape and upsample
-            grid_size = 16
-            spatial_attention_map = attn_map[i].reshape(grid_size, grid_size)  # (e.g., 4x4)
+            # Take square root of the first dimension to get the grid size
+            grid_size = int(math.sqrt(attn_map.shape[2]))
+            mean_attention_map = attn_map[i].mean(dim=0)  # Average attention across all tokens
+            spatial_attention_map = mean_attention_map.reshape(grid_size, grid_size)  # (e.g., 4x4)
             spatial_attention_map = F.interpolate(
-                spatial_attention_map.unsqueeze(0).unsqueeze(0), size=(128, 128), mode="bilinear", align_corners=False
+                spatial_attention_map.unsqueeze(0).unsqueeze(0), size=(img_size, img_size), mode="bilinear", align_corners=False
             ).squeeze()
 
             # Overlay on original image
